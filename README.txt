@@ -3,7 +3,7 @@
 JMeta is a parser creating tool for java. It creates Packrat type parsers, als known as PEGs or backtracking parsers. JMeta is heavily inspired by OMeta. See also:
 * http://en.wikipedia.org/wiki/Parsing_expression_grammar
 * http://pdos.csail.mit.edu/~baford/packrat/
-* http://www.cs.ucla.edu/~awarth/ometa/
+* http://tinlizzie.org/ometa/
 
 
 ## Important features:
