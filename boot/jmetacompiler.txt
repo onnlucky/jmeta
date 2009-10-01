@@ -1,0 +1,156 @@
+// copyright 2009 ActiveVideo; license: MIT; see license.txt
+ometa JMetaCompiler {
+  trans [:t apply(t):ans]             -> ans,
+
+  Set   :n trans:v                    -> [v, '\n', self.i, n, '= _t;'].join(''),
+  Error :msg                          -> ['Error', msg],
+
+  Str  :s                             -> ['_t=_str(', s, ');'].join(''),
+  Sym  :s                             -> ['_t=_sym(', s, ');'].join(''),
+
+  App  'super' :rule anything+:args   -> ['_push(', args.join(','), '); _t=super.', rule, '();']     .join(''),
+  App  'super' :rule                  -> ['_t=super.', rule, '();']                                  .join(''),
+  App  :rule   anything+:args         -> ['_push(', args.join(','), '); _t=', rule, '();']           .join(''),
+  App  :rule                          -> ['_t=', rule, '();']                                        .join(''),
+
+  SAct :expr                          -> ['_t=', expr, ';'].join(''),
+  Act  :expr                          -> { var pc = self.pc++;
+                                           self.ps.push(['  Object __act', pc, '(', self.as, '){', expr, '}\n'].join(''));
+                                           ['_t=__act', pc, '(', self.ns, ');'].join('');
+                                         },
+  Pred :expr                          -> { var pc = self.pc++;
+                                           self.ps.push(['  boolean __pred', pc, '(', self.as, '){', expr, '}\n'].join(''));
+                                           ['if (!__pred', pc, '(', self.ns, ')) _t=ERROR;'].join('');
+                                         },
+
+  Or   !(self.i+="  ") trans*:xs      -> { var s = '_t=ERROR; do{ //or';
+                                           for (var i = 0; i < xs.length; i++) {
+                                             s += ['\n', self.i, xs[i], '\n', self.i, 'if (_t!=ERROR) break;\n'].join('');
+                                           }
+                                           self.i = self.i.slice(2);
+                                           s += self.i +'}while(false);';
+                                         },
+
+  And  !(self.i+="  ") trans+:xs      -> {
+                                           var pc = self.pc++;
+                                           var error = false; var errormsg = '';
+                                           var s = '{ int _p'+pc+'=_pos; _t=ERROR; do{ //and';
+                                           for (var i = 0; i < xs.length; i++) {
+                                             if (xs[i][0] == 'Error') { error = true; errormsg = xs[i][1]; continue; }
+                                             s += ['\n', self.i, xs[i], '\n', self.i, 'if (_t==ERROR) '].join('');
+                                             if (!error) s += 'break;\n';
+                                             else        s += 'throw new SyntaxError("'+ errormsg +'", _pos, _string, _list);\n';
+                                           }
+                                           self.i = self.i.slice(2);
+                                           s += self.i +'}while(false); if (_t==ERROR) _pos=_p'+pc+'; }';
+                                         },
+  And                                 -> '',
+
+  Many  !(self.i+="  ") trans:x       -> self.makeMany(x, false),
+  Many1 !(self.i+="  ") trans:x       -> self.makeMany(x, true),
+  Not   trans:x                       -> self.makeNot(x),
+  Lookahead trans:x                   -> self.makeLookahead(x),
+  List  trans:x                       -> self.makeList(x),
+
+
+  Rule :name !(self.i="  ") locals:ls trans:body
+                                      -> self.makeRule(name, ls, body),
+  locals  = [string+:vs]              -> {
+                                           vs = vs.nodup();
+                                           self.ns = vs.join(',');
+                                           self.as = 'Object '+ vs.join(', Object ');
+                                           ['Object ', vs.join('=null, '), '=null;'].join('');
+                                         }
+          | []                        -> {
+                                          self.ns = '';
+                                          self.as = '';
+                                          '';
+                                         },
+  Method :c                           -> ('  '+ c +'\n'),
+  Field :c                            -> ('  '+ c +'\n'),
+  Parser :p :name :sName
+      !(self.pname=name) trans*:rules -> self.makeParser(p, name, sName, rules),
+  Import :c                           -> c,
+  Class :c                            -> c,
+  Line :ws trans:c                    -> (ws + c),
+  File trans*:xs                      -> xs.join('')
+}
+
+JMetaCompiler.initialize = function() {
+    this.pc = 0; this.ps = []; this.rls = [];
+}
+JMetaCompiler.makeParser = function(p, name, sName, rules) {
+    var s = '';
+    s += ['\n', p, ' class ', name, ' extends ', sName, ' {'].join('');
+    s += [rules.join(''), '\n', this.ps.join('')].join('');
+
+    s += '\n  public Object _jump(String r) {\n';
+    for (var i = 0; i < this.rls.length; i++) {
+        var name = this.rls[i];
+        s += ['    if (r=="', name, '") return ', name, '();\n'].join('');
+    }
+    s += '  return super._jump(r);\n  }\n\n';
+
+    s += '\n  public boolean _has(String r) {\n';
+    for (var i = 0; i < this.rls.length; i++) {
+        var name = this.rls[i];
+        s += ['    if (r=="', name, '") return true;\n'].join('');
+    }
+    s += '  return super._has(r);\n  }\n\n';
+
+    s += '  }\n';
+    this.initialize();
+    return s;
+}
+JMetaCompiler.makeRule = function(name, ls, body) {
+    this.rls.push(name);
+    var s = '';
+    s += ['\n\n  public Object ', name, '() { Object _t=null; int _start=_pos;\n'].join('');
+    s += ['  _t=_retrieve("', name, '-', this.pname, '"); if (_t!=NOT_MEMOIZED) return _t;\n  do {\n'].join('');
+    s += ['  ', ls, '\n  ',  body, '\n  _t = _memoize("', name, '-', this.pname, '", _start, _t);\n'].join('');
+    s += '  } while (_t==GROW); if (_t==ERROR) ERROR.last="'+name+'"; return _t;\n  }';
+    return s;
+}
+JMetaCompiler.makeMany = function(x, many1) {
+    var self = this;
+    var pc = self.pc++;
+    var s = '';
+    s += ['java.util.ArrayList<Object> as', pc, '=new java.util.ArrayList<Object>();\n'].join('');
+
+    if (many1) {
+        s += [self.i, x, '\n'].join('');
+        s += [self.i, 'if (_t!=ERROR) { as', pc, '.add(_t);\n'].join('');
+        self.i += "  ";
+    }
+
+    s += [self.i, 'while (true){ //many\n'].join('');
+    s += [self.i, x,  '\n'].join('');
+    s += [self.i, 'if (_t==ERROR) break; else as', pc, '.add(_t);\n'].join('');
+    s += [self.i, '} _t=as', pc, ';'].join('');
+
+    if (many1) {
+        self.i = self.i.slice(2);
+        s += ['\n', self.i, '}'].join('');
+    }
+    return s;
+}
+JMetaCompiler.makeNot = function(x) {
+    var s = "";
+    s += [this.i, x, '\n', this.i, 'if (_t==ERROR) { _t=true; } else { _t=ERROR; }'].join('');
+    return s;
+}
+JMetaCompiler.makeLookahead = function(x) {
+    var s = "";
+    s += [this.i, '{ int _l=_pos;\n'].join('');
+    s += [this.i, x, '\n', this.i, 'if (_t!=ERROR) { _pos=_l; }'].join('');
+    s += [this.i, '}'].join('');
+    return s;
+}
+JMetaCompiler.makeList = function(x) {
+    var s = "";
+    s += [this.i, '_t=_listBegin(); if (_t!=ERROR) {\n'].join('');
+    s += [this.i, x, '\n'].join('');
+    s += [this.i, '_listEnd(); }'].join('');
+    return s;
+}
+

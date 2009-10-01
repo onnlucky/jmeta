@@ -1,0 +1,269 @@
+// copyright 2009 ActiveVideo; license: MIT; see license.txt
+package jmeta;
+import java.util.*;
+
+final class DoError {
+    String msg = null;
+    public DoError(Object m) { msg = (String)m; }
+}
+
+public parser JMetaCompiler {
+    public Object jpackage = null;
+    public boolean embedded = false;
+    public ArrayList locals  = new ArrayList();
+    public ArrayList methods = new ArrayList();
+    public ArrayList rules   = new ArrayList();
+    public void reset() {
+        locals = new ArrayList();
+        methods = new ArrayList();
+        rules = new ArrayList();
+    }
+    public String sname      = "ERROR-sname-ERROR";
+    public String name       = "ERROR-name-ERROR";
+
+    public void addLocal(Object n) {
+        String s = ((String)n).intern();
+        if (! locals.contains(s)) locals.add(s);
+    }
+    public String localsAsArgs() {
+        if (locals.size() == 0) return "";
+        return "Object "+ join(locals, ", Object ");
+    }
+    public String localsAsCall() {
+        return join(locals, ",");
+    }
+    public String localsAsInit() {
+        if (locals.size() == 0) return "";
+        String res = "Object "+ join(locals, "=null; Object ") + "=null;";
+        locals.clear();
+        return res;
+    }
+
+    public String w(Object... as) {
+        StringBuffer sb = new StringBuffer();
+        for (Object a : as) sb.append(a);
+        return sb.toString();
+    }
+
+    public String _ = "  ";
+    public Object indent()  { _ = _ + "  "; return _; }
+    public Object outdent() { _ = _.substring(2); return _; }
+
+    public int __genc = 0;
+    public String genvar() { return ""+ __genc++; }
+
+    destruct: ! t=_ r=apply(t) end    { r } ;
+    trans: [ r=destruct ]             { r } ;
+
+    HList ls=trans* { return w(
+        "new Object[] {", join(ls, ", "), "}"
+    ); };
+    HConcat l=trans r=trans { return w(
+        "concat(", l, ",", r, ")"
+    ); };
+    HStr c=_ { return "\""+ Utils.escape(c) +"\""; } ;
+    HLit c=_ { c } ;
+
+    Error msg=_ {
+        return new DoError(msg);
+    };
+    Set n=_ x=trans {
+        addLocal(n);
+        return w(
+            x, "\n",
+            _, n, "=_t;"
+        );
+    };
+    Str s=_ { return w(
+        "_t=_str(\"", Utils.escape(s), "\");"
+    ); };
+    Sym s=_ { return w(
+        "_t=_sym(\"", s, "\");"
+    ); };
+
+
+    App 'super rule=_ args=trans+ { return w(
+        "_push(", join(args, ", "), "); _t=super.", rule, "();"
+    ); };
+    App 'super rule=_ { return w(
+        "_t=super.", rule, "();"
+    ); };
+    App rule=_ args=trans+ {return w(
+        "_push(", join(args, ", "), "); _t=", rule, "();"
+    ); };
+    App rule=_ { return w(
+        "_t=", rule, "();"
+    ); };
+
+
+    SAct expr=trans { return w(
+        "_t=", expr, ";"
+    ); };
+    Act expr=_ {
+        String var = genvar();
+        methods.add(w(
+            "Object __act", var, "(", localsAsArgs(), "){", expr, "}\n"
+        ));
+        return w(
+            "_t=__act", var, "(", localsAsCall(), ");"
+        );
+    };
+    Pred expr=_ {
+        String var = genvar();
+        methods.add(w(
+            "boolean __pred", var, "(", localsAsArgs(), "){", expr, "}\n"
+        ));
+        return w(
+            "if (!__pred", var, "(", localsAsCall(), ")) _t=ERROR;"
+        );
+    };
+
+
+    Or indent xs=(x=trans { return w(
+        _, x, "\n",
+        _, "if (_t!=ERROR) break;\n"
+    ); })* outdent { return w(
+        "_t=ERROR; do{ //or\n",
+        join(xs, "\n"),
+        _, "} while(false);"
+    ); };
+
+
+    And indent ts=trans+ {
+        String var = genvar();
+        String err = null;
+        Object[] xs = ((ArrayList) ts).toArray();
+        String b = w(
+            "{ int _p", var, "=_pos; _t=ERROR; do { //and\n"
+        );
+        for (int i = 0; i < xs.length; i++) {
+            Object x = xs[i];
+            if (x instanceof DoError) { err = ((DoError)x).msg; continue; }
+            if (err != null) { b = w(b,
+                _, x, "\n",
+                _, "if (_t==ERROR) throw new SyntaxError(\"", err, "\", _pos, _string, _list);\n"
+            ); } else { b = w(b,
+                _, x, "\n",
+                _, "if (_t==ERROR) break;\n"
+            ); }
+        }
+        outdent();
+        return w(b,
+            _, "} while(false); if (_t==ERROR) _pos=_p", var, "; }"
+        );
+    };
+    And { return w(
+        ""
+    );};
+
+    public String makeMany(Object x, boolean many1) {
+        String var = genvar();
+        String b = "";
+        b = w(b,
+            "java.util.ArrayList<Object> as", var, "=new java.util.ArrayList<Object>();\n"
+        );
+        if (many1) { b = w(b,
+            _, x, "\n",
+            _, "if (_t!=ERROR) { as", var, ".add(_t);\n"
+        ); indent();}
+
+        b = w(b,
+            _, "while (true) { //many\n",
+            _, x, "\n",
+            _, "if (_t==ERROR) break; else as", var, ".add(_t);\n",
+            _, "} _t=as", var, ";"
+        );
+
+        if (many1) { outdent(); b= w(b,
+            "\n",
+            _, "}"
+        );};
+        return b;
+    }
+    Many  indent x=trans outdent { return makeMany(x, false); } ;
+    Many1 indent x=trans outdent { return makeMany(x, true);  } ;
+
+    Opt indent x=trans outdent { return w(
+        _, x, "\n",
+        _, "if (_t==ERROR) if (_string != null) { _t=\"\"; } else { _t=null; }"
+    ); };
+
+    Not x=trans { return w(
+        _, x, "\n",
+        _, "if (_t==ERROR) { _t=true; } else { _t=ERROR; }"
+    );};
+
+    Peek x=trans { String var = genvar(); return w(
+        "{ int _l", var, "=_pos;\n",
+        _, x, "\n",
+        _, "if (_t!=ERROR) { _pos=_l", var, "; }}"
+    );};
+
+    List indent x=trans outdent { return w(
+        "_t=_listBegin(); if (_t!=ERROR) {\n",
+        _, "  ", x, "\n",
+        _, "_listEnd(); }"
+    );};
+
+    Rule n=_ b=trans { rules.add(n); return w(
+        "\n",
+        "  public Object ", n, "() { Object _t=null; int _start=_pos;\n",
+        "    _t=_retrieve(\"", name, "\"+\".\"+\"", n, "\"); if (_t!=NOT_MEMOIZED) return _t;\n",
+        "    ", localsAsInit(),
+        "    do {\n",
+        "    ", b, "\n",
+        "    _t=_memoize(\"", name, "\"+\".\"+\"", n, "\", _start, _t);\n",
+        "    } while (_t==GROW); if (_t==ERROR) ERROR.last=\"", n, "\"; return _t;\n",
+        "  }"
+    );};
+
+    Parser p=_ n=_ s=_ { name = (String)n; sname = (String)s; return null; } xs=trans* {
+        String b = "\n";
+        b = w(b,
+            p, " class ", name, " extends ", sname, " {",
+            join(xs), "\n",
+            join(methods), "\n",
+
+            "  public Object _jump(String r) {\n"
+        );
+
+        for (Object r : rules) { b = w(b,
+            "    if (r==\"", r, "\") return ", r, "();\n"
+        );}
+        b = w(b,
+            "    return super._jump(r);\n",
+            "  }\n",
+
+            "  public boolean _has(String r) {\n"
+        );
+        for (Object r : rules) { b = w(b,
+            "    if (r==\"", r, "\") return true;\n"
+        );}
+        b = w(b,
+            "    return super._has(r);\n",
+            "  }\n",
+
+            "}\n"
+        );
+        reset();
+        return b;
+    };
+
+    Method  c=_ { return w("  ", c, "\n"); } ;
+    Field   c=_ { return w("  ", c, "\n"); } ;
+    Package c=_ { jpackage = c; return ""; } ;
+    Import  c=_ { c } ;
+    Class   c=_ { c } ;
+    Line  ws=_ x=trans { return w(ws, x); } ;
+
+    File  xs=trans* { return w(
+        (jpackage != null)?(jpackage+"\n"):"",
+        "// generated by jmeta on ", new Date(), "\n",
+        "// do not modify, instead edit original .jmeta file\n",
+        (!embedded)?"import jmeta.*;\n":"",
+        join(xs));
+    } ;
+
+    start: ! r=destruct end           { r } ;
+}
+

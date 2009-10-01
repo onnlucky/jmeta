@@ -1,0 +1,184 @@
+// copyright 2009 ActiveVideo; license: MIT; see license.txt
+package jmeta;
+import java.util.*;
+
+public parser JMetaParser {
+    public static void main(String[] args) {
+        boolean embed = false;
+        if (args.length < 1) {
+            System.out.println("JMetaParser <input> [--embed]");
+            System.exit(2);
+        }
+        if (args.length > 1 && args[1].equals("--embed")) {
+            embed = true;
+        }
+        try {
+            String input = Utils.readFile(args[0]+".jmeta");
+            JMetaCompiler compiler = new JMetaCompiler(); compiler.embedded = embed;
+            String output = (String) compiler.parse(new JMetaParser().parse(input));
+            Utils.writeFile(args[0]+".java", output);
+            System.exit(0);
+        } catch (SyntaxError ex) {
+            ex.printStackTrace();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        System.exit(1);
+    }
+
+    fromTo x=_ y=_: str(x) (~str(y) _)* str(y) ;
+    sp            : super.sp | fromTo("//","\n") | fromTo("/*","*/") ;
+    ws            : (sp|nl)* ;
+
+    listOf e=_ s=_: .f=apply(e) rs=(.str(s) .apply(e))*                 { [f] + rs }
+                  | empty                                               { [] } ;
+
+    nameFirst     : "_" | letter ;
+    nameRest      : nameFirst | digit ;
+    name          : f=nameFirst rs=nameRest*                            { return join(concat(new Object[] {f}, rs)); } ;
+
+    echar         : "\\" c=_ { return Utils.unescape((Character)c); } | _ ;
+    tsString      : "\"" xs=(~"\"" echar)* "\""                         { return join(xs); } ;
+
+    dollar        : "${" xs=cbraces* "}"                                { return "\"+"+ join(xs)+ "+\""; }
+                  | "$" n=name                                          { return "\"+"+ n +"+\"";        } ;
+    dollarstring  : "\"" xs=(~"\"" (dollar|echar))* "\""                { return join(xs); } ;
+
+    string        : s=tsString                                          { ['Str, s] } ;
+    number        : sign=("-"|"+"|empty) ds=digit+                      { return new Object[] {"HLit", ""+ sign + join(ds)}; } ;
+    symbol        : "'"! s=name                                         { ['Sym, s] } ;
+    k keyword=_   : str(keyword) ~(nameFirst|digit)                     { keyword } ;
+
+    error         : "!" msg=(dollarstring|empty)                        { ['Error, msg] } ;
+    any           : "_"                                                 { ['App, '_any] } ;
+    wsdot         : "."                                                 { ['App, 'ws]   } ;
+
+    args          : "(" ! as=listOf('simplehost,",") .")"               { as }
+                  | empty                                               { [] } ;
+    application   : "super."! r=name as=args                            { ['App, 'super, r] + as }
+                  | r=name as=args                                      { ['App, r] + as } ;
+
+    simplehost    : rs=simplehost ."+" .ls=simplehost                   { ['HConcat, rs, ls] }
+                  | "[" ! xs=listOf('simplehost,",") ."]"               { ['HList] + xs }
+                  | .n=number                                           { n }
+                  | ."'"! s=name                                        { ['HStr, s] }
+                  | .s=tsString                                         { ['HStr, s] }
+                  | .n=name                                             { ['HLit, n] } ;
+    cbraces       : "{" xs=cbraces* "}"                                 { return "{"+ join(xs) +"}"; }
+                  | ~"}" _ ;
+    semAction     : "{" . s=simplehost ."}"                             { ['SAct, s] }
+                  | "{"!  xs=cbraces*    "}"                            { return new Object[] {"Act", join(xs)}; } ;
+    semPred       : "?{"! xs=cbraces*    "}"                            { return new Object[] {"Pred", join(xs)}; } ;
+
+
+    expr          : xs=listOf('expr4,"|")                               { ['Or]  + xs  } ;
+    expr4         : xs=expr3*                                           { ['And] + xs  } ;
+    optIter x=_   : "*"                                                 { ['Many,  x]  }
+                  | "+"                                                 { ['Many1, x]  }
+                  | "?"                                                 { ['Opt,   x]  }
+                  | empty                                               { x            } ;
+    expr3         : .n=name ."="! .e=expr2 x=optIter(e)                 { ['Set, n, x] }
+                  | .e=expr2 x=optIter(e)                               { x            } ;
+    expr2         : "~"! x=expr2                                        { ['Not,  x]   }
+                  | "&"! x=expr1                                        { ['Peek, x]   }
+                  | expr1 ;
+    expr1         : wsdot | any | error | semPred | semAction | application
+                  | x=(k("null")|k("true")|k("false"))                  { ['HLit, x] }
+                  | string | symbol | number
+                  | "[" .x=expr ."]"                                    { ['List, x] }
+                  | "(" .x=expr .")"                                    { x } ;
+
+    rule          : &(.n=name) .x=rulePart(n) xs=(.";" .rulePart(n))* .";"  { ['Rule, n, ['Or, x] + xs ] } ;
+    rulePart rn=_ : .n=name ?{ return n.equals(rn); } !
+                    .b1=expr4 (.":"! .b2=expr                                { ['And, b1, b2] }
+                              | empty                                        { b1 }
+                              ) ;
+
+    // java parsing support
+    qualifiers: qs=(.k("public")|.k("private")|.k("final")|.k("static")|.k("abstract"))+
+    {
+        return join(qs, " ");
+    } ;
+    method    : q=qualifiers . r=name . n=name ."(" as=(~")" _)* ")" ."{" bs=cbraces* "}"
+    {
+        String body = ""+ q +" "+ r +" "+ n +"("+ join(as) +") {"+ join(bs) +"}";
+        return new Object[] {"Method", body };
+    } ;
+    field     : q=qualifiers . t=name . n=name ."=" ! xs=(~";" _)* ";"
+    {
+        String body = ""+ q +" "+ t +" "+ n +" = "+ join(xs) +";";
+        return new Object[] {"Field", body } ;
+    } ;
+    jimport   : stm=k("import") ! xs=(~";" _)* ";"
+    {
+        String body = stm + join(xs) +";";
+        return new Object[] {"Import", body };
+    } ;
+    jpackage  : stm=k("package") ! xs=(~";" _)* ";"
+    {
+        String body = stm + join(xs) +";";
+        return new Object[] {"Package", body };
+    } ;
+    classdef  : q=qualifiers . k("class") ! xs=(~"{" _)* "{" bs=cbraces* "}"
+    {
+        String body = ""+ q +" class "+ join(xs) +" {"+ join(bs) +"}";
+        return new Object[] {"Class", body } ;
+    } ;
+
+    ruleMethod: .method | .field | .rule ;
+    parser    : .p=(k("public")|empty) .k("parser") ! .n=name .sn=(k("extends") .name|empty {"BaseParser"})
+                ."{" rs=ruleMethod* ."}"
+                p={ ['Parser, p, n, sn] + rs }
+                { return new JMetaOptimizer().parse(p, "optimizeGrammar"); } ;
+
+    line      : p=. l=(parser|jpackage|jimport|classdef)  { return new Object[] {"Line", join(p), l}; } ;
+    file      : ! ls=line* . end                 { ['File] + ls } ;
+    start     : file ;
+}
+
+parser JMetaPass {
+    public boolean changed = false;
+    setChanged:  {changed = true; return null;} ;
+
+    destruct: r=_ ?{return hasRule(r);} ! x=apply(r) end { x } ;
+    trans   : [ x=destruct ]                             { x }
+            | _                                                ;
+
+    Or       xs=trans*            { ['Or]  + xs   } ;
+    And      xs=trans*            { ['And] + xs   } ;
+    Not      x=trans              { ['Not,   x]   } ;
+    Many     x=trans              { ['Many,  x]   } ;
+    Many1    x=trans              { ['Many1, x]   } ;
+    Peek     x=trans              { ['Peek,  x]   } ;
+    List     x=trans              { ['List,  x]   } ;
+    Set      n=_ x=trans          { ['Set,  n, x] } ;
+    Rule     n=_ x=trans          { ['Rule, n, x] } ;
+
+    start: r=destruct end { r }
+         | r=_ end        { r }
+         | r=_* end       { r } ;
+}
+
+parser JMetaAndOrOpt extends JMetaPass {
+    And  x=trans end          setChanged { x } ;
+    And xs=transInside('And)             { ['And] + xs } ;
+    Or   x=trans end          setChanged { x } ;
+    Or  xs=transInside('Or)              { ['Or] + xs  } ;
+
+    transInside s=_ : [ sym(s) xs=transInside(s) ] ys=transInside(s) setChanged { xs + ys  }
+                    |   x=trans xs=transInside(s)                               { [x] + xs }
+                    |                                                           { []       } ;
+}
+
+parser JMetaOptimizer {
+    optimizeGrammar: ! 'Parser p=_ n=_ sn=_ rs=optimizeRule* end              { ['Parser, p, n, sn] + rs } ;
+    optimizeRule:    r=_ {
+        JMetaAndOrOpt opt = new JMetaAndOrOpt();
+        do {
+            opt.changed = false;
+            r = opt.parse(r);
+        } while (opt.changed);
+        return r;
+    } ;
+}
+

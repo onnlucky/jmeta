@@ -1,0 +1,85 @@
+// copyright 2009 ActiveVideo; license: MIT; see license.txt
+ometa JMetaParser <: Parser {
+  fromTo :x :y   = seq(x) (~seq(y) char)* seq(y),
+  space          = super(#space) | fromTo('//', '\n') | fromTo('/*', '*/'),
+  nameFirst      = '_' | letter,
+  nameRest       = nameFirst | digit,
+  tsName         = firstAndRest(#nameFirst, #nameRest):xs              -> xs.join(''),
+  name           = spaces tsName,
+
+  eChar          = '\\' char:c                                         -> unescape('\\' +c)
+                 | char,
+  tsString       = '"' (~'"' eChar)*:xs '"'                            -> xs.join(''),
+  string         = tsString:xs                                         -> [#Str, xs.toProgramString()],
+  number         = ('-' | empty -> ''):sign digit+:ds                  -> [#Str, sign + ds.join('')],
+  symbol         = ('\'' tsName | tsString):xs                         -> [#Sym, xs.toProgramString()],
+
+  keyword :xs    = token(xs) ~letterOrDigit                            -> xs,
+
+  error          = "!" (tsString|empty->''):msg                        -> [#Error, msg],
+  any            = "_"                                                 -> [#App, #_any],
+  ws             = "."                                                 -> [#App, #ws],
+
+  args           = "(" listOf(#simplehost, ','):xs ")"                 -> xs
+                 | empty                                               -> [],
+  application    = "super." name:rule args:as                          -> [#App, #super, rule].concat(as)
+                 | name:rule args:as                                   -> [#App, rule].concat(as),
+
+  simplehost     = simplehost:ls "+" simplehost:rs                       -> ['concat(', ls, ', ', rs, ')'].join('')
+                 | "[" listOf(#simplehost, ','):xs "]"                   -> ['new Object[] {', xs.join(','), '}'].join('')
+                 | spaces number:s                                       -> s[1]
+                 | spaces symbol:s                                       -> s[1]
+                 | spaces string:s                                       -> s[1]
+                 | spaces name,
+  cbraces        = '{' cbraces*:xs '}'                                 -> ('{' + xs.join('') +'}')
+                 | ~'}' char,
+  semAction      = "{" simplehost:x "}"                                -> [#SAct, x]
+                 | "{" cbraces*:xs  "}"                                -> [#Act, xs.join('')],
+  semPred        = "?{" cbraces*:xs "}"                                -> [#Pred, xs.join('')],
+
+  expr           = listOf(#expr4, '|'):xs                              -> [#Or].concat(xs),
+  expr4          = expr3*:xs                                           -> [#And].concat(xs),
+  optIter :x     = "*"                                                 -> [#Many,  x]
+                 | "+"                                                 -> [#Many1, x]
+                 | empty                                               -> x,
+  expr3          = name:n '=' expr2:x optIter(x):x                     -> { self.locals.push(n); [#Set, n, x] }
+                 | expr2:x optIter(x):x                                -> x
+                 | name:n '=' '_'                                      -> { self.locals.push(n); [#Set, n, [#App, #_any]] },
+  expr2          = "~" expr2:x                                         -> [#Not,       x]
+                 | "&" expr1:x                                         -> [#Lookahead, x]
+                 | expr1,
+  expr1          = ws | any | error | application | semAction | semPred
+                 | ( keyword('undefined') | keyword('nil')
+                 |   keyword('true')      | keyword('false') ):x       -> [#App, #exactly, x]
+                 | spaces (string | symbol | number)
+                 | "[" expr:x "]"                                      -> [#List, x]
+                 | "(" expr:x ")"                                      -> x,
+  ruleName       = name
+                 | spaces tsString,
+  rule           = &(ruleName:n) !(self.locals = [])
+                     rulePart(n):x (";" rulePart(n))*:xs ";"           -> [#Rule, n, self.locals, [#Or, x].concat(xs)],
+  rulePart :rn   = ruleName:n ?(n == rn) expr4:b1 ( ":" expr:b2        -> [#And, b1, b2]
+                                                  | empty              -> b1
+                                                  ),
+
+  qualifiers     = (keyword('public') | keyword('private') | keyword('final') | keyword('static') | keyword('abstract'))+:qs
+                                    -> qs.join(' '),
+  method         = qualifiers:q spaces name:r spaces name:n
+                   "(" (~')' char)*:as ")" "{" cbraces*:bs "}"
+                                    -> [#Method, [q, r, n, '(', as.join(''), ') {', bs.join(''), '}'].join(' ')],
+  field          = qualifiers:q spaces name:t spaces name:n "=" (~';' char)*:xs ';'
+                                    -> [#Field, [q, t, n, '=', xs.join(''), ';'].join(' ')],
+  import         = (keyword('import')|keyword('package')):stm (~';' char)*:xs ';'
+                                    -> [#Import, [stm, xs.join(''), ';'].join(' ')],
+  classdef       = qualifiers:q keyword('class') (~'{' char)*:xs "{" cbraces*:bs "}"
+                                    -> [#Class, [q, 'class', xs.join(''), '{', bs.join(''), '}'].join(' ')],
+
+  ruleMethod     = spaces (method | field | rule),
+  parser         = (keyword('public')|empty->''):p keyword('parser') name:n
+                     (keyword('extends') name | empty -> 'BaseParser'):sn
+                     "{" ruleMethod*:rs "}"                 //-> [#Parser, p, n, sn].concat(rs),
+                     foreign(JMetaOptimizer, #optimizeGrammar, [#Parser, p, n, sn].concat(rs)),
+  line           = spaces:p (parser | import | classdef):l             -> [#Line, p.join(''), l],
+  file           = line*:ls spaces end                                 -> [#File].concat(ls)
+}
+

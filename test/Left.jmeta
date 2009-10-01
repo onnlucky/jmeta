@@ -1,0 +1,16 @@
+public parser Left {
+    public static void main(String[] args) {
+        Left parser = new Left();
+        //parser.tracing = true;
+        System.out.println(parser.parse("1?-2!-3?"));
+    }
+
+start: x=expr ! end { x } ;
+
+   x: x=expr "!" { return ""+ x +"!"; }
+    | x=expr "?" { return ""+ x +"?"; }
+    | expr ;
+expr: l=x "-" r=x { return ""+ l +" - "+ r; }
+    | num ;
+ num: digit+;
+}
