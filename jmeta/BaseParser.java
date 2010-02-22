@@ -5,8 +5,8 @@ import java.util.*;
 
 class State {
     State prev = null;
-    int pos; Object[] list; TreeMap<Integer, HashMap<String, Memoize>> positions;
-    public State(State prev, int p, Object[] l, TreeMap<Integer, HashMap<String, Memoize>> m) {
+    int pos; Object[] list; SparseArrayList<HashMap<String, Memoize>> positions;
+    public State(State prev, int p, Object[] l, SparseArrayList<HashMap<String, Memoize>> m) {
         this.prev = prev;
         pos = p; list = l; positions = m;
     }
@@ -81,18 +81,18 @@ public class BaseParser {
 
     ArrayDeque<Object> args;
     State _stack = null;
-    TreeMap<Integer, HashMap<String, Memoize>> _positions;
+    SparseArrayList<HashMap<String, Memoize>> _positions;
     ArrayDeque<HashSet<String>> _lefts;
 
     public int _pos = 0;
     public String _string;
     public Object[] _list;
 
-    public Object _memoize(String s, Integer p, Object o) {
+    public Object _memoize(String s, int p, Object o) {
         HashMap<String, Memoize> map = _positions.get(p);
         if (map == null) {
             map = new HashMap<String, Memoize>();
-            _positions.put(p, map);
+            _positions.set(p, map);
         }
 
         Memoize entry = map.get(s);
@@ -135,11 +135,11 @@ public class BaseParser {
         // we cannot memoize in face of arguments
         if (! args.isEmpty()) return trace(">ntry:", s, NOT_MEMOIZED);
 
-        Integer p = _pos;
+        int p = _pos;
         HashMap<String, Memoize> map = _positions.get(p);
         if (map == null) {
             map = new HashMap<String, Memoize>();
-            _positions.put(p, map);
+            _positions.set(p, map);
         }
 
         Memoize entry = map.get(s);
@@ -163,7 +163,7 @@ public class BaseParser {
 
     void _init() {
         _pos = 0;
-        _positions = new TreeMap<Integer, HashMap<String, Memoize>>();
+        _positions = new SparseArrayList<HashMap<String, Memoize>>();
         _lefts = new ArrayDeque<HashSet<String>>();
         args = new ArrayDeque<Object>();
         init();
@@ -438,7 +438,7 @@ public class BaseParser {
         _stack = new State(_stack, _pos, _list, _positions);
         _pos = 0;
         _list = list;
-        _positions = new TreeMap<Integer, HashMap<String, Memoize>>();
+        _positions = new SparseArrayList<HashMap<String, Memoize>>();
         return null;
     }
 

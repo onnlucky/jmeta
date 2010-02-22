@@ -1,4 +1,4 @@
-RUNTIME_CLASSES=jmeta/SyntaxError.class jmeta/ErrorObject.class jmeta/Memoize.class jmeta/State.class jmeta/Position.class
+RUNTIME_CLASSES=jmeta/SyntaxError.class jmeta/ErrorObject.class jmeta/Memoize.class jmeta/State.class jmeta/Position.class jmeta/SparseArrayList.class
 JMETA_CLASSES=jmeta/Utils.class jmeta/JMetaParser.class jmeta/JMetaCompiler.class
 
 PREFIX=$(DESTDIR)/usr
@@ -36,6 +36,9 @@ jmeta/Utils.class: jmeta/Utils.java
 
 jmeta/ErrorObject.class: jmeta/ErrorObject.java
 	javac jmeta/ErrorObject.java
+
+jmeta/SparseArrayList.class: jmeta/SparseArrayList.java
+	javac jmeta/SparseArrayList.java
 
 
 boot/jmetaparser.js boot/jmetaoptimizer.js boot/jmetacompiler.js: boot/jmetaparser.txt boot/jmetaoptimizer.txt boot/jmetacompiler.txt boot/boot.js
