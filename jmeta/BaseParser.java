@@ -61,7 +61,7 @@ public class BaseParser {
             sb.append(o);
         }
     }
-    public static boolean tracing = false;
+    public static final boolean tracing = false;
     public Object trace(Object... args) {
         if (! tracing) return args[args.length - 1];
 
@@ -90,12 +90,14 @@ public class BaseParser {
 
     public Object _memoize(String s, int p, Object o) {
         HashMap<String, Memoize> map = _positions.get(p);
+        Memoize entry = null;
         if (map == null) {
             map = new HashMap<String, Memoize>();
             _positions.set(p, map);
+        } else {
+            entry = map.get(s);
         }
 
-        Memoize entry = map.get(s);
         if (entry == null) {
             // sometimes we don't have a entry, incase args > 0
             return trace("unmemoize:", s, o);
@@ -137,12 +139,14 @@ public class BaseParser {
 
         int p = _pos;
         HashMap<String, Memoize> map = _positions.get(p);
+        Memoize entry = null;
         if (map == null) {
             map = new HashMap<String, Memoize>();
             _positions.set(p, map);
+        } else {
+            entry = map.get(s);
         }
 
-        Memoize entry = map.get(s);
         if (entry == null) {
             // mark that we are starting with this rule
             map.put(s, new Memoize(LEFT_REC, _pos));
@@ -312,9 +316,10 @@ public class BaseParser {
         if (_string == null)
             throw new IllegalStateException("string ('\""+ s +"\"') is only available in string parsing");
         int p = _pos;
-        for (int i = 0; i < s.length(); i++) {
-            if (_peek() == ERROR) { _pos = p; ERROR.last = "'"+ s +"'"; return ERROR; }
-            if (_cpeek() != s.charAt(i)) { _pos = p; ERROR.last = "'"+ s +"'"; return ERROR; }
+        final int size = s.length();
+        for (int i = 0; i < size; i++) {
+            if (_peek() == ERROR) { _pos = p; ERROR.last = s; return ERROR; }
+            if (_cpeek() != s.charAt(i)) { _pos = p; ERROR.last = s; return ERROR; }
             _any();
         }
         return trace(" ok _str():", s);
