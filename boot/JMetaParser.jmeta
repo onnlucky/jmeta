@@ -33,9 +33,11 @@ public parser JMetaParser {
     listOf e=_ s=_: .f=apply(e) rs=(.str(s) .apply(e))*                 { [f] + rs }
                   | empty                                               { [] } ;
 
+    reserved_     : "static"|"private"|"protected"|"public"|"java"|"class"|"interface"|"abstract"|"synchronized"|"final" ;
+    reserved      : reserved_ ~nameRest ;
     nameFirst     : "_" | letter ;
     nameRest      : nameFirst | digit ;
-    name          : f=nameFirst rs=nameRest*                            { return join(concat(new Object[] {f}, rs)); } ;
+    name          : ~reserved f=nameFirst rs=nameRest*                  { return join(concat(new Object[] {f}, rs)); } ;
 
     echar         : "\\" c=_ { return Utils.unescape((Character)c); } | _ ;
     tsString      : "\"" xs=(~"\"" echar)* "\""                         { return join(xs); } ;
@@ -95,18 +97,30 @@ public parser JMetaParser {
                               ) ;
 
     // java parsing support
-    qualifiers: qs=(.k("public")|.k("private")|.k("final")|.k("static")|.k("abstract"))+
+    qualifiers: qs=(.k("public")|.k("private")|.k("final")|.k("static")|.k("abstract")|.k("synchronized"))+
     {
         return join(qs, " ");
-    } ;
-    method    : q=qualifiers . r=name . n=name ."(" as=(~")" _)* ")" ."{" bs=cbraces* "}"
+    } | .k("java")  { return ""; } ;
+    ptype     : "<" as=(~">" _)* ">" { return "<"+ join(as) +">"; }
+              | empty { return ""; } ;
+    jstatic   : k("static") ."{" bs=cbraces* "}"
     {
-        String body = ""+ q +" "+ r +" "+ n +"("+ join(as) +") {"+ join(bs) +"}";
+        String body = "static {"+ join(bs) +"}";
         return new Object[] {"Method", body };
     } ;
-    field     : q=qualifiers . t=name . n=name ."=" ! xs=(~";" _)* ";"
+    jinit      : k("java") ."{" bs=cbraces* "}"
     {
-        String body = ""+ q +" "+ t +" "+ n +" = "+ join(xs) +";";
+        String body = "{" + join(bs) +"}";
+        return new Object[] {"Method", body };
+    } ;
+    jmethod    : q=qualifiers .r=name .p=ptype .n=name ."(" as=(~")" _)* ")" ."{" bs=cbraces* "}"
+    {
+        String body = ""+ q +" "+ r + p +" "+ n +"("+ join(as) +") {"+ join(bs) +"}";
+        return new Object[] {"Method", body };
+    } ;
+    jfield     : q=qualifiers .t=name .p=ptype .n=name ."=" ! xs=(~";" _)* ";"
+    {
+        String body = ""+ q +" "+ t + p +" "+ n +" = "+ join(xs) +";";
         return new Object[] {"Field", body } ;
     } ;
     jimport   : stm=k("import") ! xs=(~";" _)* ";"
@@ -125,7 +139,7 @@ public parser JMetaParser {
         return new Object[] {"Class", body } ;
     } ;
 
-    ruleMethod: .method | .field | .rule ;
+    ruleMethod: .jstatic | .jinit | .jmethod | .jfield | .rule ;
     parser    : .p=(k("public")|empty) .k("parser") ! .n=name .sn=(k("extends") .name|empty {"BaseParser"})
                 ."{" rs=ruleMethod* ."}"
                 p={ ['Parser, p, n, sn] + rs }

@@ -19,15 +19,18 @@ JMeta is a parser creating tool for java. It creates Packrat type parsers, als k
 ## Installation
 Compile with `make` install with `make install`. Requires java 1.5 or higher. To bootstrap it uses js-meta, and rhino.
 
-TODO: fix position in line/char.
-TODO: forbid rules names using java keywords, or build-in rules that should not be overridden.
-TODO: allow inline classes; allow classes without qualifiers
-TODO: maybe change syntax a tiny bit, such that we can distinguish java code from rules? Like have `java String s;` for fields
+TODO: fix guard as first thing bug
+TODO: start using new IntMap as 'inline cache' instead of giving each method a String and doing global caching.
+TODO: fix position in line/char (can use the new inline cache when matching "\n" chars).
+TODO: forbid rules with build-in name that may not be overridden.
+TODO: allow inline classes.
 TODO: allow parsers with custom constructors.
+TODO: maybe improve syntax a lot more, and add more 'shorthand' stuff?
 TODO: we could do without a runtime, by just creating inline classes, unless we inherit a grammar.
 TODO: implement a more fancy memoization schema, including argument support.
-TODO: expiriment with throwing exceptions, instead of returning ERROR, see what is faster/safer.
+TODO: experiment with throwing exceptions, instead of returning ERROR, see what is faster/safer.
 TODO: some form of 'mutable, stack scoped' variable that auto unwinds as rules backtrack would be nice (but doesn't fit java so well), e.g. `method: n=name @frame={return new Frame(n);} args body { @frame };` where `args` and `body` can access `@frame`. And `@frame` ceises to exist after the `method` rule ends.
+TODO: fix error reporting; an error on backtracking must be scoped ...
 
 
 ## Error Reporting

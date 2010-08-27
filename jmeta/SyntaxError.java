@@ -27,7 +27,7 @@ public class SyntaxError extends Error {
             if (msg.length() > 0) msg = "expected "+ msg;
             else msg = "expected "+ BaseParser.ERROR.last;
 
-            msg = msg + " before '"+ BaseParser.print_r(list[pos]) +"'";
+            msg = msg + " before '"+ BaseParser.print_r(list[pos - 1]) +"'";
             return ""+ msg +" (at pos: "+ pos +")";
         }
     }

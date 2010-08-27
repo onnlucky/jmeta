@@ -20,10 +20,10 @@ jmeta/JMetaCompiler.class: jmeta/BaseParser.class jmeta/JMetaCompiler.java
 	javac jmeta/JMetaCompiler.java
 
 jmeta/JMetaParser.java: boot/JMetaParser.jmeta boot/jmetaparser.js
-	(cd boot; js boot-jmetaparser.js)
+	(cd boot; java -jar js.jar boot-jmetaparser.js)
 
 jmeta/JMetaCompiler.java: boot/JMetaCompiler.jmeta boot/jmetaparser.js
-	(cd boot; js boot-jmetacompiler.js)
+	(cd boot; java -jar js.jar boot-jmetacompiler.js)
 
 jmeta/BaseParser.class: jmeta/BaseParser.java jmeta/SyntaxError.class jmeta/ErrorObject.class
 	javac jmeta/BaseParser.java
@@ -42,7 +42,7 @@ jmeta/SparseArrayList.class: jmeta/SparseArrayList.java
 
 
 boot/jmetaparser.js boot/jmetaoptimizer.js boot/jmetacompiler.js: boot/jmetaparser.txt boot/jmetaoptimizer.txt boot/jmetacompiler.txt boot/boot.js
-	(cd boot; js boot.js)
+	(cd boot; java -jar js.jar boot.js)
 
 
 install: jmeta.jar jmeta-runtime.jar
@@ -70,9 +70,12 @@ test-left: jmeta-runtime.jar jmeta.jar
 test-calc: jmeta-runtime.jar jmeta.jar
 	java -jar jmeta.jar test/Calculator
 	(cd test; javac -cp ../jmeta-runtime.jar Calculator.java)
-	(cd test; java  -cp ../jmeta-runtime.jar:. Calculator "4 * 3 - 2"; echo "should be: 10")
+	(cd test; java  -cp ../jmeta-runtime.jar:. Calculator "4 * 3 - 4/2"; echo "should be: 10")
 
-run: test
+run: jmeta-runtime.jar jmeta.jar
+	java -jar jmeta.jar run
+	javac -cp jmeta-runtime.jar:. run.java
+	java  -cp jmeta-runtime.jar:. run
 
 clean:
 	rm -f *.jar

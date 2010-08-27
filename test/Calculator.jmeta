@@ -8,14 +8,14 @@ public parser Calculator {
 
     start: ! e=expr . end      { e };
     expr:
-        | .p=pos l=expr ."+"! r=expr1 { ['ADD, l, r, p] }
-        | .p=pos l=expr ."-"! r=expr1 { ['SUB, l, r, p] }
+        | p=pos l=expr ."+"! r=expr1 { ['ADD, l, r, p] }
+        | p=pos l=expr ."-"! r=expr1 { ['SUB, l, r, p] }
         | expr1
     ;
     expr1:
-        | .p=pos l=expr1 ."*"! r=value { ['MUL, l, r, p] }
-        | .p=pos l=expr1 ."/"! r=value { ['DIV, l, r, p] }
-        | .p=pos l=expr1 ."%"! r=value { ['MOD, l, r, p] }
+        | p=pos l=expr1 ."*"! r=value { ['MUL, l, r, p] }
+        | p=pos l=expr1 ."/"! r=value { ['DIV, l, r, p] }
+        | p=pos l=expr1 ."%"! r=value { ['MOD, l, r, p] }
         | value
     ;
     value:
